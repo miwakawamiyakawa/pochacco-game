@@ -1,0 +1,419 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#8bd8ff">
+<title>ポチャッコ おさんぽ大冒険</title>
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;overflow:hidden;background:#8bd8ff;font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Yu Gothic",sans-serif;touch-action:none}
+canvas{position:fixed;inset:0;width:100%;height:100%;display:block}
+#hud{position:fixed;left:0;right:0;top:0;padding:calc(env(safe-area-inset-top) + 10px) 14px 0;display:flex;justify-content:space-between;align-items:flex-start;pointer-events:none;z-index:5}
+.hudleft,.hudright{display:flex;gap:8px}
+.pill{background:rgba(255,255,255,.90);border:2px solid rgba(255,255,255,.75);border-radius:18px;padding:8px 12px;box-shadow:0 5px 16px rgba(0,0,0,.10);font-weight:900;color:#25456c;text-shadow:0 1px #fff}
+.pill small{display:block;font-size:10px;letter-spacing:.8px;color:#5076a1}
+#controls{position:fixed;left:0;right:0;bottom:0;padding:0 18px calc(env(safe-area-inset-bottom) + 18px);display:flex;justify-content:space-between;align-items:flex-end;z-index:5;pointer-events:none}
+.controlCluster{display:flex;gap:12px}
+.ctrl{pointer-events:auto;width:70px;height:70px;border-radius:50%;border:3px solid rgba(255,255,255,.95);background:rgba(116,79,49,.72);color:#fff;font-size:34px;font-weight:900;display:flex;align-items:center;justify-content:center;box-shadow:0 7px 18px rgba(0,0,0,.2);user-select:none}
+.ctrl:active{transform:scale(.94)}
+#jumpBtn{width:82px;height:82px;font-size:38px}
+#topBtns{position:fixed;right:14px;top:calc(env(safe-area-inset-top) + 66px);display:flex;gap:9px;z-index:6}
+.roundBtn{width:46px;height:46px;border-radius:50%;border:2px solid rgba(255,255,255,.95);background:rgba(64,145,210,.85);color:#fff;font-size:22px;display:flex;align-items:center;justify-content:center;box-shadow:0 5px 14px rgba(0,0,0,.16)}
+#overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:22px;background:linear-gradient(rgba(115,201,250,.18),rgba(62,130,173,.16));z-index:10}
+.card{width:min(92vw,440px);background:rgba(255,255,255,.95);border-radius:28px;padding:24px 20px;text-align:center;border:3px solid rgba(255,255,255,.85);box-shadow:0 20px 55px rgba(0,0,0,.2)}
+.logo{font-size:34px;font-weight:1000;color:#826b92;letter-spacing:1px;text-shadow:0 3px #fff}
+.sub{font-size:20px;font-weight:900;color:#5595c8;margin-top:-4px}
+.card p{line-height:1.6;color:#4b5f73}
+button.start{width:100%;border:0;border-radius:18px;padding:15px 18px;background:#ffd768;color:#533b24;font-size:19px;font-weight:1000;box-shadow:0 6px 0 #d9ad36}
+button.start:active{transform:translateY(4px);box-shadow:0 2px 0 #d9ad36}
+.hint{font-size:12px;color:#6a7d8f;margin-top:12px}
+#toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom) + 112px);transform:translateX(-50%);padding:9px 14px;border-radius:999px;background:rgba(47,60,70,.78);color:#fff;font-weight:900;opacity:0;transition:.15s;z-index:8;pointer-events:none}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div id="hud">
+  <div class="hudleft">
+    <div class="pill"><small>BONES</small>🦴 <span id="bones">0</span></div>
+    <div class="pill"><small>DISTANCE</small><span id="distance">0</span>m</div>
+  </div>
+  <div class="hudright">
+    <div class="pill"><small>BEST</small><span id="best">0</span>m</div>
+  </div>
+</div>
+
+<div id="topBtns">
+  <div class="roundBtn" id="musicBtn">🎵</div>
+  <div class="roundBtn" id="soundBtn">🔊</div>
+</div>
+
+<div id="controls">
+  <div class="controlCluster">
+    <div class="ctrl" id="leftBtn">←</div>
+    <div class="ctrl" id="rightBtn">→</div>
+  </div>
+  <div class="ctrl" id="jumpBtn">↑</div>
+</div>
+
+<div id="overlay">
+  <div class="card">
+    <div class="logo">POCHACCO</div>
+    <div class="sub">おさんぽ大冒険</div>
+    <p>右へ走って骨を集めよう！<br>↑をもう一度押すと<strong>二段ジャンプ</strong>。</p>
+    <button class="start" id="startBtn">GO！</button>
+    <div class="hint">← → 移動 / ↑ ジャンプ・二段ジャンプ<br>BGMと効果音はスタート後に鳴ります</div>
+  </div>
+</div>
+<div id="toast"></div>
+
+<script>
+(function(){
+"use strict";
+const canvas=document.getElementById("game");
+const ctx=canvas.getContext("2d");
+const overlay=document.getElementById("overlay");
+const bonesEl=document.getElementById("bones");
+const distanceEl=document.getElementById("distance");
+const bestEl=document.getElementById("best");
+const toast=document.getElementById("toast");
+
+let W=0,H=0,DPR=1,groundY=0;
+let running=false,last=0,worldX=0;
+let bones=0,distance=0;
+let best=Number(localStorage.getItem("pochacco_best_stage")||0);
+bestEl.textContent=best;
+
+const player={x:115,y:0,w:74,h:78,vy:0,onGround:true,jumps:0,dir:1,runT:0};
+const input={left:false,right:false};
+const items=[];
+const obstacles=[];
+const enemies=[];
+const clouds=[];
+const sparkles=[];
+let speed=210;
+let spawnItem=0,spawnObs=0,spawnEnemy=0;
+
+function resize(){
+  DPR=Math.min(devicePixelRatio||1,2);
+  W=innerWidth;H=innerHeight;
+  canvas.width=Math.floor(W*DPR);canvas.height=Math.floor(H*DPR);
+  canvas.style.width=W+"px";canvas.style.height=H+"px";
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  groundY=H*.72;
+  if(!running) player.y=groundY-player.h;
+}
+addEventListener("resize",resize); resize();
+
+function reset(){
+  items.length=0;obstacles.length=0;enemies.length=0;clouds.length=0;sparkles.length=0;
+  worldX=0;bones=0;distance=0;speed=210;
+  spawnItem=.6;spawnObs=1.8;spawnEnemy=3.5;
+  player.x=Math.max(90,W*.16);player.y=groundY-player.h;player.vy=0;player.onGround=true;player.jumps=0;player.dir=1;player.runT=0;
+  bonesEl.textContent="0";distanceEl.textContent="0";
+  for(let i=0;i<6;i++) clouds.push({x:Math.random()*W,y:75+Math.random()*H*.28,s:28+Math.random()*36,v:10+Math.random()*12});
+}
+function showToast(s){
+  toast.textContent=s;toast.style.opacity=1;
+  clearTimeout(showToast.t);showToast.t=setTimeout(()=>toast.style.opacity=0,450);
+}
+
+// ---------- audio ----------
+let audioCtx=null,musicOn=true,soundOn=true,musicTimer=null,musicStep=0;
+const melody=[659.25,783.99,880,783.99,659.25,587.33,659.25,523.25,587.33,659.25,783.99,659.25,587.33,523.25,587.33,659.25];
+function initAudio(){
+  if(audioCtx)return;
+  const AC=window.AudioContext||window.webkitAudioContext;
+  if(AC) audioCtx=new AC();
+}
+function tone(freq,dur=.1,type="sine",vol=.04,when){
+  if(!audioCtx||!soundOn)return;
+  const t=when??audioCtx.currentTime;
+  const o=audioCtx.createOscillator(),g=audioCtx.createGain();
+  o.type=type;o.frequency.setValueAtTime(freq,t);
+  g.gain.setValueAtTime(.0001,t);g.gain.exponentialRampToValueAtTime(vol,t+.01);g.gain.exponentialRampToValueAtTime(.0001,t+dur);
+  o.connect(g);g.connect(audioCtx.destination);o.start(t);o.stop(t+dur+.02);
+}
+function jumpSfx(doubleJump){
+  if(!soundOn)return;
+  const now=audioCtx.currentTime;
+  tone(doubleJump?640:520,.08,"square",.05,now);
+  tone(doubleJump?900:760,.12,"sine",.035,now+.04);
+}
+function collectSfx(){
+  if(!soundOn)return;
+  const n=audioCtx.currentTime;
+  tone(880,.06,"square",.04,n);tone(1174,.09,"square",.03,n+.05);
+}
+function hitSfx(){
+  if(!soundOn)return;
+  const n=audioCtx.currentTime;
+  tone(150,.14,"sawtooth",.05,n);tone(95,.2,"square",.03,n+.06);
+}
+function scheduleMusic(){
+  if(!audioCtx||!musicOn)return;
+  const beat=.19, now=audioCtx.currentTime+.03;
+  for(let i=0;i<16;i++){
+    const f=melody[(musicStep+i)%melody.length];
+    const o=audioCtx.createOscillator(),g=audioCtx.createGain();
+    o.type="triangle";o.frequency.value=f;
+    g.gain.setValueAtTime(.0001,now+i*beat);
+    g.gain.exponentialRampToValueAtTime(.022,now+i*beat+.01);
+    g.gain.exponentialRampToValueAtTime(.0001,now+i*beat+beat*.72);
+    o.connect(g);g.connect(audioCtx.destination);o.start(now+i*beat);o.stop(now+i*beat+beat*.75);
+    if(i%4===0){
+      const b=audioCtx.createOscillator(),bg=audioCtx.createGain();
+      b.type="sine";b.frequency.value=f/2;
+      bg.gain.setValueAtTime(.018,now+i*beat);bg.gain.exponentialRampToValueAtTime(.0001,now+i*beat+beat*1.6);
+      b.connect(bg);bg.connect(audioCtx.destination);b.start(now+i*beat);b.stop(now+i*beat+beat*1.65);
+    }
+  }
+  musicStep=(musicStep+16)%melody.length;
+  musicTimer=setTimeout(scheduleMusic,beat*16*1000-80);
+}
+function startMusic(){initAudio();if(!audioCtx)return;if(audioCtx.state==="suspended")audioCtx.resume();clearTimeout(musicTimer);if(musicOn)scheduleMusic()}
+function stopMusic(){clearTimeout(musicTimer);musicTimer=null}
+
+document.getElementById("musicBtn").addEventListener("click",function(){
+  musicOn=!musicOn;this.textContent=musicOn?"🎵":"🚫";
+  if(musicOn)startMusic();else stopMusic();
+});
+document.getElementById("soundBtn").addEventListener("click",function(){
+  soundOn=!soundOn;this.textContent=soundOn?"🔊":"🔇";
+});
+
+// ---------- controls ----------
+function jump(){
+  if(!running)return;
+  initAudio();
+  if(player.jumps<2){
+    player.vy=player.jumps===0?-610:-560;
+    player.onGround=false;
+    player.jumps++;
+    jumpSfx(player.jumps===2);
+    burst(player.x+player.w/2,player.y+player.h*.85,player.jumps===2?8:5);
+    if(player.jumps===2) showToast("二段ジャンプ！");
+  }
+}
+function bindHold(id,key){
+  const el=document.getElementById(id);
+  el.addEventListener("pointerdown",e=>{e.preventDefault();input[key]=true});
+  ["pointerup","pointercancel","pointerleave"].forEach(ev=>el.addEventListener(ev,()=>input[key]=false));
+}
+bindHold("leftBtn","left");bindHold("rightBtn","right");
+document.getElementById("jumpBtn").addEventListener("pointerdown",e=>{e.preventDefault();jump()});
+canvas.addEventListener("pointerdown",e=>{if(running){e.preventDefault();jump()}});
+document.addEventListener("keydown",e=>{
+  if(e.key==="ArrowLeft")input.left=true;
+  if(e.key==="ArrowRight")input.right=true;
+  if(e.key==="ArrowUp"||e.key===" "){e.preventDefault();jump()}
+});
+document.addEventListener("keyup",e=>{if(e.key==="ArrowLeft")input.left=false;if(e.key==="ArrowRight")input.right=false});
+
+function startGame(){
+  overlay.style.display="none";reset();startMusic();running=true;last=performance.now();requestAnimationFrame(loop);
+}
+document.getElementById("startBtn").addEventListener("click",startGame);
+
+// ---------- world ----------
+function spawnBone(){
+  items.push({x:W+40,y:groundY-80-Math.random()*145,r:15,spin:Math.random()*6});
+}
+function spawnObstacle(){
+  const t=Math.random()<.7?"box":"sign";
+  if(t==="box") obstacles.push({x:W+40,y:groundY-52,w:55,h:52,type:t});
+  else obstacles.push({x:W+40,y:groundY-62,w:50,h:62,type:t});
+}
+function spawnEnemy(){
+  enemies.push({x:W+50,y:groundY-48,w:44,h:48,phase:Math.random()*6});
+}
+function burst(x,y,n){
+  for(let i=0;i<n;i++)sparkles.push({x,y,vx:-50+Math.random()*100,vy:-80-Math.random()*80,t:.55+Math.random()*.25});
+}
+function rectHit(a,b,pad=8){
+  return a.x+pad<b.x+b.w && a.x+a.w-pad>b.x && a.y+pad<b.y+b.h && a.y+a.h-pad>b.y;
+}
+function itemHit(it){
+  const cx=player.x+player.w/2,cy=player.y+player.h/2,dx=cx-it.x,dy=cy-it.y;
+  return dx*dx+dy*dy<(it.r+25)*(it.r+25);
+}
+
+function update(dt){
+  worldX+=speed*dt;distance=worldX/10;distanceEl.textContent=Math.floor(distance);
+  speed=210+Math.min(120,distance*.25);
+
+  let move=0;if(input.left)move-=1;if(input.right)move+=1;
+  if(move!==0){player.dir=move>0?1:-1;player.x+=move*170*dt}
+  player.x=Math.max(38,Math.min(W*.46,player.x));
+
+  player.vy+=1500*dt;player.y+=player.vy*dt;
+  if(player.y>=groundY-player.h){player.y=groundY-player.h;player.vy=0;player.onGround=true;player.jumps=0}
+  player.runT+=dt*(player.onGround?13:5);
+
+  spawnItem-=dt;if(spawnItem<=0){spawnBone();spawnItem=.85+Math.random()*.7}
+  spawnObs-=dt;if(spawnObs<=0){spawnObstacle();spawnObs=2.0+Math.random()*1.8}
+  spawnEnemy-=dt;if(spawnEnemy<=0){spawnEnemy();spawnEnemy=4.0+Math.random()*2.5}
+
+  clouds.forEach(c=>{c.x-=c.v*dt;if(c.x<-120)c.x=W+120});
+
+  for(let i=items.length-1;i>=0;i--){
+    const it=items[i];it.x-=speed*dt;it.spin+=dt*6;
+    if(itemHit(it)){items.splice(i,1);bones++;bonesEl.textContent=bones;collectSfx();burst(it.x,it.y,10);continue}
+    if(it.x<-50)items.splice(i,1);
+  }
+  for(let i=obstacles.length-1;i>=0;i--){
+    const o=obstacles[i];o.x-=speed*dt;
+    if(rectHit(player,o,12)){gameOver();return}
+    if(o.x+o.w<-20)obstacles.splice(i,1);
+  }
+  for(let i=enemies.length-1;i>=0;i--){
+    const e=enemies[i];e.x-=speed*dt;e.phase+=dt*6;
+    if(rectHit(player,e,13)){gameOver();return}
+    if(e.x+e.w<-20)enemies.splice(i,1);
+  }
+  for(let i=sparkles.length-1;i>=0;i--){
+    const s=sparkles[i];s.t-=dt;s.x+=s.vx*dt;s.y+=s.vy*dt;s.vy+=220*dt;
+    if(s.t<=0)sparkles.splice(i,1);
+  }
+}
+function gameOver(){
+  running=false;hitSfx();stopMusic();
+  const d=Math.floor(distance);if(d>best){best=d;localStorage.setItem("pochacco_best_stage",best);bestEl.textContent=best}
+  overlay.innerHTML='<div class="card"><div class="logo">POCHACCO</div><div class="sub">おさんぽ終了！</div><p>🦴 '+bones+' 個<br>🚶 '+d+'m<br>BEST '+best+'m</p><button class="start" id="retryBtn">もう一度！</button><div class="hint">二段ジャンプで箱や敵をかわそう</div></div>';
+  overlay.style.display="flex";
+  document.getElementById("retryBtn").addEventListener("click",startGame);
+}
+
+// ---------- drawing ----------
+function roundedRect(x,y,w,h,r){
+  r=Math.min(r,w/2,h/2);ctx.beginPath();ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);ctx.quadraticCurveTo(x+w,y,x+w,y+r);ctx.lineTo(x+w,y+h-r);ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);ctx.lineTo(x+r,y+h);ctx.quadraticCurveTo(x,y+h,x,y+h-r);ctx.lineTo(x,y+r);ctx.quadraticCurveTo(x,y,x+r,y);ctx.closePath();
+}
+function drawBG(){
+  const g=ctx.createLinearGradient(0,0,0,groundY);g.addColorStop(0,"#8bd9ff");g.addColorStop(1,"#e9f8ff");ctx.fillStyle=g;ctx.fillRect(0,0,W,groundY);
+
+  // clouds
+  clouds.forEach(c=>{
+    ctx.fillStyle="rgba(255,255,255,.9)";ctx.beginPath();
+    ctx.arc(c.x,c.y,c.s*.55,0,Math.PI*2);ctx.arc(c.x+c.s*.55,c.y-10,c.s*.45,0,Math.PI*2);ctx.arc(c.x+c.s*1.05,c.y,c.s*.52,0,Math.PI*2);ctx.fill();
+  });
+
+  // distant hills + sea
+  ctx.fillStyle="#b8e2dd";
+  for(let x=-100;x<W+180;x+=190){ctx.beginPath();ctx.arc(x,groundY-85,110,Math.PI,0);ctx.fill()}
+  ctx.fillStyle="#7bc7ef";ctx.fillRect(0,groundY-105,W,105);
+  ctx.fillStyle="rgba(255,255,255,.55)";
+  for(let y=groundY-85;y<groundY-10;y+=20)for(let x=((worldX*.08)%80)-80;x<W;x+=80){ctx.beginPath();ctx.arc(x,y,22,0,Math.PI);ctx.strokeStyle="rgba(255,255,255,.55)";ctx.lineWidth=2;ctx.stroke()}
+
+  // ground
+  ctx.fillStyle="#5fba4c";ctx.fillRect(0,groundY-10,W,15);
+  ctx.fillStyle="#98d86d";ctx.fillRect(0,groundY,W,H-groundY);
+  ctx.fillStyle="#9a7047";ctx.fillRect(0,groundY+26,W,H-groundY-26);
+  ctx.fillStyle="#75be59";
+  for(let x=-30;x<W+30;x+=55){ctx.beginPath();ctx.arc(x,groundY+18,31,Math.PI,0);ctx.fill()}
+
+  // flowers
+  for(let x=((worldX*.2)%120)-120;x<W;x+=120){
+    ctx.fillStyle="#fff";ctx.beginPath();ctx.arc(x,groundY-24,4,0,Math.PI*2);ctx.arc(x+7,groundY-23,4,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle="#ffd85c";ctx.beginPath();ctx.arc(x+3,groundY-23,3,0,Math.PI*2);ctx.fill();
+  }
+}
+function drawBone(it){
+  ctx.save();ctx.translate(it.x,it.y);ctx.rotate(Math.sin(it.spin)*.15);
+  ctx.fillStyle="#ffd875";ctx.strokeStyle="#b87a26";ctx.lineWidth=3;
+  roundedRect(-14,-6,28,12,6);ctx.fill();ctx.stroke();
+  for(const sx of [-1,1])for(const sy of [-1,1]){ctx.beginPath();ctx.arc(sx*13,sy*6,7,0,Math.PI*2);ctx.fill();ctx.stroke()}
+  ctx.restore();
+}
+function drawObstacle(o){
+  if(o.type==="box"){
+    ctx.fillStyle="#c98d4a";ctx.strokeStyle="#8b5e31";ctx.lineWidth=3;roundedRect(o.x,o.y,o.w,o.h,5);ctx.fill();ctx.stroke();
+    ctx.beginPath();ctx.moveTo(o.x+8,o.y+8);ctx.lineTo(o.x+o.w-8,o.y+o.h-8);ctx.moveTo(o.x+o.w-8,o.y+8);ctx.lineTo(o.x+8,o.y+o.h-8);ctx.stroke();
+  }else{
+    ctx.fillStyle="#8a623f";ctx.fillRect(o.x+20,o.y+24,8,38);
+    ctx.fillStyle="#d5a56c";ctx.strokeStyle="#7c5635";ctx.lineWidth=3;roundedRect(o.x,o.y,o.w,34,7);ctx.fill();ctx.stroke();
+    ctx.fillStyle="#755238";ctx.font="900 14px system-ui";ctx.fillText("GO!",o.x+10,o.y+22);
+  }
+}
+function drawEnemy(e){
+  ctx.save();ctx.translate(e.x+e.w/2,e.y+e.h/2+Math.sin(e.phase)*2);
+  ctx.fillStyle="#ffd43d";ctx.strokeStyle="#45331b";ctx.lineWidth=2.5;
+  ctx.beginPath();ctx.ellipse(0,3,17,20,0,0,Math.PI*2);ctx.fill();ctx.stroke();
+  ctx.beginPath();ctx.moveTo(12,2);ctx.lineTo(22,6);ctx.lineTo(12,10);ctx.closePath();ctx.fill();
+  ctx.fillStyle="#222";ctx.beginPath();ctx.arc(5,-4,2,0,Math.PI*2);ctx.fill();
+  ctx.strokeStyle="#45331b";ctx.beginPath();ctx.moveTo(-8,21);ctx.lineTo(-11,27);ctx.moveTo(7,21);ctx.lineTo(11,27);ctx.stroke();
+  ctx.restore();
+}
+function drawPlayer(){
+  const x=player.x,y=player.y,w=player.w,h=player.h;
+  ctx.save();
+  ctx.fillStyle="rgba(0,0,0,.13)";ctx.beginPath();ctx.ellipse(x+w/2,groundY+2,30,6,0,0,Math.PI*2);ctx.fill();
+
+  let bob=0,lean=0,leg=0,ear=0,stretch=1;
+  if(player.onGround){
+    bob=Math.sin(player.runT*2)*2.6;lean=.09;leg=Math.sin(player.runT)*8;ear=Math.sin(player.runT*1.3)*5;
+  }else{
+    lean=player.vy<0?-.08:.05;stretch=player.vy<0?1.06:.98;ear=-6;
+  }
+
+  ctx.translate(x+w/2,y+h/2+bob);
+  ctx.scale(player.dir,1);
+  ctx.rotate(lean);
+  ctx.scale(1,stretch);
+
+  // rear ear
+  ctx.fillStyle="#222";ctx.beginPath();ctx.ellipse(-22,-19,8,22,-.65+ear*.01,0,Math.PI*2);ctx.fill();
+
+  // body
+  ctx.fillStyle="#fff";ctx.strokeStyle="#252525";ctx.lineWidth=2.5;
+  ctx.beginPath();ctx.ellipse(0,15,23,25,0,0,Math.PI*2);ctx.fill();ctx.stroke();
+
+  // shirt
+  ctx.fillStyle="#ef5260";ctx.beginPath();ctx.ellipse(0,10,22,16,0,0,Math.PI*2);ctx.fill();
+
+  // legs running / jumping
+  ctx.fillStyle="#fff";
+  if(player.onGround){
+    ctx.save();ctx.translate(-5,31);ctx.rotate(leg*.025);roundedRect(-14,0,20,10,5);ctx.fill();ctx.stroke();ctx.restore();
+    ctx.save();ctx.translate(7,28);ctx.rotate(-leg*.025);roundedRect(-5,0,20,10,5);ctx.fill();ctx.stroke();ctx.restore();
+  }else{
+    ctx.save();ctx.translate(-4,29);ctx.rotate(-.55);roundedRect(-13,0,19,10,5);ctx.fill();ctx.stroke();ctx.restore();
+    ctx.save();ctx.translate(7,28);ctx.rotate(.5);roundedRect(-5,0,19,10,5);ctx.fill();ctx.stroke();ctx.restore();
+  }
+
+  // head
+  ctx.fillStyle="#fff";ctx.beginPath();ctx.ellipse(3,-13,26,23,0,0,Math.PI*2);ctx.fill();ctx.stroke();
+
+  // front ear
+  ctx.fillStyle="#222";ctx.beginPath();ctx.ellipse(24,-16,8,23,.6+ear*.01,0,Math.PI*2);ctx.fill();
+
+  // face faces RIGHT because canvas is scaled by dir
+  ctx.fillStyle="#222";ctx.beginPath();ctx.arc(10,-15,2.4,0,Math.PI*2);ctx.arc(19,-13,2.1,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.ellipse(18,-5,3.2,2.5,0,0,Math.PI*2);ctx.fill();
+
+  // arm
+  ctx.fillStyle="#fff";ctx.beginPath();ctx.ellipse(20,10,8,5,-.4,0,Math.PI*2);ctx.fill();ctx.stroke();
+
+  // run trails
+  if(player.onGround){
+    ctx.strokeStyle="rgba(255,255,255,.9)";ctx.lineWidth=3;ctx.lineCap="round";
+    ctx.beginPath();ctx.moveTo(-42,8);ctx.lineTo(-58,8);ctx.moveTo(-38,18);ctx.lineTo(-50,18);ctx.stroke();
+  }
+  ctx.restore();
+}
+function drawSparkles(){
+  sparkles.forEach(s=>{ctx.globalAlpha=Math.max(0,s.t/.7);ctx.fillStyle="#fff7a1";ctx.beginPath();ctx.arc(s.x,s.y,3.5,0,Math.PI*2);ctx.fill()});ctx.globalAlpha=1;
+}
+function draw(){
+  ctx.clearRect(0,0,W,H);drawBG();items.forEach(drawBone);obstacles.forEach(drawObstacle);enemies.forEach(drawEnemy);drawPlayer();drawSparkles();
+}
+function loop(t){
+  if(!running)return;
+  const dt=Math.min(.033,(t-last)/1000||0);last=t;update(dt);draw();if(running)requestAnimationFrame(loop);
+}
+reset();draw();
+})();
+</script>
+</body>
+</html>
